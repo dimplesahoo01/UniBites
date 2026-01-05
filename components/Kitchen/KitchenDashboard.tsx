@@ -3,26 +3,45 @@ import React, { useState, useEffect } from 'react';
 import { useGlobal } from '../../App';
 import { Order, OrderStatus } from '../../types';
 import { getKitchenSummary } from '../../services/geminiService';
+import { db } from '../../firebase'; // Firebase integration
+import { collection, onSnapshot, doc, updateDoc, query, orderBy } from 'firebase/firestore'; // Firebase integration
 
 const KitchenDashboard: React.FC = () => {
-  // Changed setActiveTab to setView as setActiveTab does not exist in GlobalContextType
   const { orders, setOrders, setView } = useGlobal();
   const [filter, setFilter] = useState<OrderStatus | 'all'>('pending');
   const [motivation, setMotivation] = useState('Welcome back, Chef!');
 
+  // Firebase integration: Listen for real-time order updates
+  useEffect(() => {
+    const q = query(collection(db, "orders"), orderBy("timestamp", "desc"));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const ordersData = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Order));
+      setOrders(ordersData);
+    });
+
+    return () => unsubscribe(); // Cleanup listener on component unmount
+  }, [setOrders]);
+
   useEffect(() => {
     const fetchMotivation = async () => {
-      const pendingCount = orders.filter(o => o.status === 'pending').length;
-      const quote = await getKitchenSummary(pendingCount);
-      setMotivation(quote);
+      if (orders.length > 0) {
+        const pendingCount = orders.filter(o => o.status === 'pending').length;
+        const quote = await getKitchenSummary(pendingCount);
+        setMotivation(quote);
+      }
     };
     fetchMotivation();
-  }, [orders.length]);
+  }, [orders]);
 
-  const updateStatus = (id: string, newStatus: OrderStatus) => {
-    setOrders(prev => prev.map(order => 
-      order.id === id ? { ...order, status: newStatus } : order
-    ));
+  // Firebase integration: Update order status in Firestore
+  const updateStatus = async (id: string, newStatus: OrderStatus) => {
+    const orderDocRef = doc(db, 'orders', id);
+    try {
+      await updateDoc(orderDocRef, { status: newStatus });
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      alert("Failed to update order status. Please try again.");
+    }
   };
 
   const filteredOrders = orders.filter(o => filter === 'all' || o.status === filter);
@@ -32,7 +51,6 @@ const KitchenDashboard: React.FC = () => {
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <div className="flex items-center gap-3">
-            {/* Changed setActiveTab('landing') to setView('auth') as 'landing' is not a valid view */}
             <button onClick={() => setView('auth')} className="text-gray-400 hover:text-gray-600">
               <i className="fas fa-chevron-left"></i>
             </button>

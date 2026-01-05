@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { MenuItem, Order, User } from './types';
-import { INITIAL_MENU } from './constants';
+import { db } from './firebase'; // Firebase integration
+import { collection, getDocs } from 'firebase/firestore'; // Firebase integration
 import StudentLayout from './components/Student/StudentLayout';
 import StaffDashboard from './components/Staff/StaffDashboard';
 import Auth from './components/Auth';
@@ -41,7 +42,7 @@ const App: React.FC = () => {
     const saved = localStorage.getItem('uni-bites-orders-v2');
     return saved ? JSON.parse(saved) : [];
   });
-  const [menu, setMenu] = useState<MenuItem[]>(INITIAL_MENU);
+  const [menu, setMenu] = useState<MenuItem[]>([]); // Firebase integration: Initialize with empty array
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('uni-bites-user');
     return saved ? JSON.parse(saved) : null;
@@ -63,6 +64,22 @@ const App: React.FC = () => {
   });
 
   const [studentView, setStudentView] = useState<StudentNavView>('home');
+
+  // Firebase integration: Fetch menu from Firestore
+  useEffect(() => {
+    const fetchMenu = async () => {
+      try {
+        const menuCollection = collection(db, 'menu');
+        const menuSnapshot = await getDocs(menuCollection);
+        const menuList = menuSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MenuItem));
+        setMenu(menuList);
+      } catch (error) {
+        console.error("Error fetching menu from Firestore:", error);
+      }
+    };
+
+    fetchMenu();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('uni-bites-orders-v2', JSON.stringify(orders));

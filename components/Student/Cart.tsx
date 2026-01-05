@@ -3,6 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { useGlobal } from '../../App';
 import { OrderItem, Order } from '../../types';
 import { LOGO_URL } from '../../constants';
+import { db } from '../../firebase'; // Firebase integration
+import { collection, doc, runTransaction } from 'firebase/firestore'; // Firebase integration
 
 interface CartProps {
   onCheckoutComplete: () => void;
@@ -40,31 +42,57 @@ const Cart: React.FC<CartProps> = ({ onCheckoutComplete }) => {
   const handleCheckout = async () => {
     if (cartItems.length === 0) return;
     setIsProcessing(true);
-    // Artificial delay for UX
-    await new Promise(r => setTimeout(r, 800));
-    
-    const gst = Math.round(subtotal * 0.05);
-    const total = subtotal + gst;
-    const newToken = 'ON-' + Math.floor(100 + Math.random() * 900);
-    
-    const newOrder: Order = {
-      id: Math.random().toString(36).substr(2, 9),
-      token: newToken,
-      items: [...cartItems],
-      total,
-      status: 'pending',
-      timestamp: Date.now(),
-      paymentMethod: 'online',
-      customerName: currentUser?.name || 'Guest',
-      customerEmail: currentUser?.email || 'guest@example.com',
-      customerPhone: currentUser?.phone || '0000000000'
-    };
 
-    setOrders(prev => [newOrder, ...prev]);
-    setActiveOrder(newOrder);
-    setCart({}); // Clear cart after successful order creation
-    setIsProcessing(false);
-    onCheckoutComplete();
+    try {
+      // Firebase integration: Atomically create a new order and update token count
+      const newOrder = await runTransaction(db, async (transaction) => {
+        // 1. Get the current token number
+        const tokenDocRef = doc(db, "globals", "counters");
+        const tokenDoc = await transaction.get(tokenDocRef);
+        const lastToken = tokenDoc.exists() && tokenDoc.data().orderToken ? tokenDoc.data().orderToken : 0;
+        const newTokenNumber = lastToken + 1;
+        
+        // 2. Create or update the token number
+        if (tokenDoc.exists()) {
+            transaction.update(tokenDocRef, { orderToken: newTokenNumber });
+        } else {
+            transaction.set(tokenDocRef, { orderToken: newTokenNumber });
+        }
+
+        const newToken = `ON-${newTokenNumber}`;
+        const total = subtotal + (subtotal * 0.05); // Assuming 5% GST
+
+        const orderPayload: Omit<Order, 'id'> = {
+          token: newToken,
+          items: cartItems,
+          total,
+          status: 'pending',
+          timestamp: Date.now(),
+          paymentMethod: 'online',
+          customerName: currentUser?.name || 'Student',
+          customerEmail: currentUser?.email || '',
+          customerPhone: currentUser?.phone || '',
+        };
+        
+        // 3. Create the new order
+        const newOrderRef = doc(collection(db, "orders"));
+        transaction.set(newOrderRef, orderPayload);
+        
+        return { ...orderPayload, id: newOrderRef.id };
+      });
+
+      // Update local state
+      setOrders(prev => [newOrder, ...prev]);
+      setActiveOrder(newOrder);
+      setCart({});
+      onCheckoutComplete();
+
+    } catch (error) {
+      console.error("Order placement error:", error);
+      alert("Failed to place order. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
