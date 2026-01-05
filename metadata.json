@@ -1,0 +1,8 @@
+{
+  "name": "Uni Bites - Canteen Ordering System",
+  "description": "A smart in-campus canteen ordering system with real-time kitchen notifications, token generation, and menu management for students.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
